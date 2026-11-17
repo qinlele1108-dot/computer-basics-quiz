@@ -546,6 +546,7 @@
     list: [],
     idx: 0,
     records: new Map(),
+    optionViews: new Map(),
     lastWrongIds: []
   };
 
@@ -567,6 +568,26 @@
       [arr[i], arr[j]] = [arr[j], arr[i]];
     }
     return arr;
+  }
+
+  function prepareOptionView(q) {
+    if (q.type !== 'choice') return;
+    const normal = [];
+    const special = [];
+    q.options.forEach((text, i) => {
+      // “以上说法都不对”一类选项必须留在最后
+      (text.indexOf('以上') !== -1 ? special : normal).push(i);
+    });
+    shuffle(normal);
+    const order = normal.concat(special);
+    state.optionViews.set(q.id, {
+      options: order.map(i => q.options[i]),
+      answer: order.indexOf(q.answer)
+    });
+  }
+
+  function optionView(q) {
+    return state.optionViews.get(q.id) || { options: q.options, answer: q.answer };
   }
 
   /* ---------- 错题本 ---------- */
@@ -659,7 +680,9 @@
     state.list = pool;
     state.idx = 0;
     state.records = new Map();
+    state.optionViews = new Map();
     state.lastWrongIds = [];
+    pool.forEach(prepareOptionView);
     renderQuestion();
     showScreen('quiz');
   }
@@ -677,12 +700,13 @@
     $('#q-no').textContent = `题库第 ${q.id} 题`;
 
     if (q.type === 'choice') {
+      const view = optionView(q);
       $('#q-text').textContent = q.q;
-      $('#q-body').innerHTML = '<div class="options">' + q.options.map((opt, i) => {
+      $('#q-body').innerHTML = '<div class="options">' + view.options.map((opt, i) => {
         let cls = 'option';
         let mark = '';
         if (rec) {
-          if (i === q.answer) { cls += ' correct'; mark = '<span class="opt-mark">✓</span>'; }
+          if (i === view.answer) { cls += ' correct'; mark = '<span class="opt-mark">✓</span>'; }
           else if (i === rec.selected) { cls += ' wrong'; mark = '<span class="opt-mark">✗</span>'; }
           else { cls += ' dim'; }
         }
@@ -717,13 +741,14 @@
 
   function feedbackHTML(q, rec) {
     if (q.type === 'choice') {
+      const view = optionView(q);
       if (rec.correct) {
         return '<div class="feedback ok"><div class="title">✓ 回答正确</div>' +
-          '<div>正确答案：' + LETTERS[q.answer] + '. ' + esc(q.options[q.answer]) + '</div></div>';
+          '<div>正确答案：' + LETTERS[view.answer] + '. ' + esc(view.options[view.answer]) + '</div></div>';
       }
       return '<div class="feedback bad"><div class="title">✗ 回答错误</div>' +
-        '<div>正确答案：<span class="fb-right">' + LETTERS[q.answer] + '. ' + esc(q.options[q.answer]) + '</span></div>' +
-        '<div class="fb-line">你选择了：<span class="fb-mine">' + LETTERS[rec.selected] + '. ' + esc(q.options[rec.selected]) + '</span></div></div>';
+        '<div>正确答案：<span class="fb-right">' + LETTERS[view.answer] + '. ' + esc(view.options[view.answer]) + '</span></div>' +
+        '<div class="fb-line">你选择了：<span class="fb-mine">' + LETTERS[rec.selected] + '. ' + esc(view.options[rec.selected]) + '</span></div></div>';
     }
     const lines = q.answers.map((accepted, k) => {
       const ok = rec.results[k];
@@ -759,7 +784,7 @@
   function answerChoice(index) {
     const q = currentQ();
     if (q.type !== 'choice' || state.records.has(q.id)) return;
-    const correct = index === q.answer;
+    const correct = index === optionView(q).answer;
     state.records.set(q.id, { type: 'choice', selected: index, correct: correct });
     if (correct) removeWrong(q.id); else addWrong(q.id);
     renderQuestion();
@@ -848,8 +873,9 @@
       : esc(q.q);
     let answerHTML;
     if (q.type === 'choice') {
-      answerHTML = '<div class="review-ans">你的答案：<span class="mine">' + LETTERS[rec.selected] + '. ' + esc(q.options[rec.selected]) + '</span></div>' +
-        '<div class="review-ans">正确答案：<span class="right">' + LETTERS[q.answer] + '. ' + esc(q.options[q.answer]) + '</span></div>';
+      const view = optionView(q);
+      answerHTML = '<div class="review-ans">你的答案：<span class="mine">' + LETTERS[rec.selected] + '. ' + esc(view.options[rec.selected]) + '</span></div>' +
+        '<div class="review-ans">正确答案：<span class="right">' + LETTERS[view.answer] + '. ' + esc(view.options[view.answer]) + '</span></div>';
     } else {
       answerHTML = q.answers.map((accepted, k) =>
         '<div class="review-ans">' + CIRCLED[k] + ' 你的答案：<span class="mine">' + esc(rec.inputs[k]) + '</span>　正确答案：<span class="right">' + esc(accepted[0]) + '</span></div>'
